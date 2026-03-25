@@ -17,6 +17,9 @@ import { RecordEventStoreService } from './services/record-event-store.service';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { MedicalRbacModule } from '../roles/medical-rbac.module';
+import { EncryptionModule } from '../encryption/encryption.module';
+import { AuditModule } from '../common/audit/audit.module';
+import { RecordDownloadService } from './services/record-download.service';
 
 @Module({
   imports: [
@@ -27,12 +30,14 @@ import { MedicalRbacModule } from '../roles/medical-rbac.module';
     CircuitBreakerModule,
     forwardRef(() => AccessControlModule),
     MedicalRbacModule,
+    EncryptionModule,
+    AuditModule,
   ],
   controllers: [RecordsController],
   providers: [RecordsService, RelatedRecordsService, IpfsService, StellarService, IpfsWithBreakerService, RecordEventStoreService],
   exports: [RecordsService, RelatedRecordsService, IpfsWithBreakerService, RecordEventStoreService],
   controllers: [RecordsController, RecordTemplateController],
-  providers: [RecordsService, RecordTemplateService, IpfsService, StellarService, IpfsWithBreakerService, RecordEventStoreService],
-  exports: [RecordsService, RecordTemplateService, IpfsWithBreakerService, RecordEventStoreService],
+  providers: [RecordsService, RecordTemplateService, IpfsService, StellarService, IpfsWithBreakerService, RecordEventStoreService, RecordDownloadService],
+  exports: [RecordsService, RecordTemplateService, IpfsWithBreakerService, RecordEventStoreService, RecordDownloadService],
 })
 export class RecordsModule {}
