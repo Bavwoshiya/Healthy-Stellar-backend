@@ -41,6 +41,7 @@ import { TenantConfigModule } from './tenant-config/tenant-config.module';
 import { GdprModule } from './gdpr/gdpr.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
 import { JobsModule } from './jobs/jobs.module';
+import { DataRetentionModule } from './data-retention/data-retention.module';
 import { AuditModule } from './common/audit/audit.module';
 import { FhirModule } from './fhir/fhir.module';
 import { StellarModule } from './stellar/stellar.module';
@@ -151,6 +152,7 @@ const getUserTrackerFromRequest = (req: any): string => {
     FhirModule,
     AccessControlModule,
     JobsModule,
+    DataRetentionModule,
     StellarModule,
     AuditModule,
     ReportsModule,
