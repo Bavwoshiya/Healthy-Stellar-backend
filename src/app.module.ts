@@ -45,6 +45,7 @@ import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
 import { StellarStreamModule } from './stellar-stream/stellar-stream.module';
+import { EhrImportModule } from './ehr-import/ehr-import.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/throttler/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler.config';
