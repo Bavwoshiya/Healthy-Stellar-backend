@@ -44,6 +44,7 @@ import { DataRetentionModule } from './data-retention/data-retention.module';
 import { GraphqlModule } from './graphql/graphql.module';
 import { VersioningModule } from './versioning/versioning.module';
 import { LedgerReconciliationModule } from './ledger-reconciliation/ledger-reconciliation.module';
+import { StellarStreamModule } from './stellar-stream/stellar-stream.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { ThrottlerConfigService } from './common/throttler/throttler-config.service';
@@ -117,6 +118,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     GraphqlModule,
     VersioningModule,
     LedgerReconciliationModule,
+    StellarStreamModule,
   ],
   controllers: [AppController],
   providers: [
