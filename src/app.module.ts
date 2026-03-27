@@ -59,6 +59,8 @@ import { LoggerModule } from './common/logger/logger.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { EventStoreModule } from './event-store/event-store.module';
+import { ProjectionsModule } from './projections/projections.module';
+import { CqrsModule } from '@nestjs/cqrs';
 
 @Module({
   imports: [
@@ -122,6 +124,8 @@ import { EventStoreModule } from './event-store/event-store.module';
     LedgerReconciliationModule,
     StellarStreamModule,
     EventStoreModule,
+    ProjectionsModule,
+    CqrsModule,
   ],
   controllers: [AppController],
   providers: [
