@@ -2,47 +2,66 @@ import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/commo
 import { Request, Response, NextFunction } from 'express';
 import * as crypto from 'crypto';
 
+/**
+ * HMAC-SHA256 signature verification middleware for webhook endpoints.
+ *
+ * Expects header: X-Signature: {timestamp}.{hmac-sha256-hex}
+ * where the HMAC is computed over `{timestamp}.{rawBody}`.
+ *
+ * Instantiate with the appropriate secret env-var name per route:
+ *   new WebhookSignatureMiddleware('IPFS_WEBHOOK_SECRET')
+ *   new WebhookSignatureMiddleware('STELLAR_WEBHOOK_SECRET')
+ */
 @Injectable()
 export class WebhookSignatureMiddleware implements NestMiddleware {
   private readonly secret: string;
-  private readonly maxAge = 5 * 60 * 1000; // 5 minutes
+  private readonly maxAge = 5 * 60 * 1000; // 5-minute replay window
 
-  constructor() {
-    this.secret = process.env.WEBHOOK_SECRET;
-    if (!this.secret) {
-      throw new Error('WEBHOOK_SECRET environment variable is required');
+  constructor(secretEnvVar: string) {
+    const secret = process.env[secretEnvVar];
+    if (!secret) {
+      throw new Error(`${secretEnvVar} environment variable is required`);
     }
+    this.secret = secret;
   }
 
-  use(req: Request, res: Response, next: NextFunction) {
-    const signature = req.headers['x-webhook-signature'] as string;
+  use(req: Request, _res: Response, next: NextFunction): void {
+    const header = req.headers['x-signature'] as string | undefined;
 
-    if (!signature) {
+    if (!header) {
       throw new UnauthorizedException();
     }
 
-    const [timestamp, receivedSignature] = signature.split('.');
-
-    if (!timestamp || !receivedSignature) {
+    const dotIndex = header.indexOf('.');
+    if (dotIndex === -1) {
       throw new UnauthorizedException();
     }
 
-    // Replay attack prevention
+    const timestamp = header.slice(0, dotIndex);
+    const receivedSig = header.slice(dotIndex + 1);
+
+    if (!timestamp || !receivedSig) {
+      throw new UnauthorizedException();
+    }
+
     const requestTime = parseInt(timestamp, 10);
     if (isNaN(requestTime) || Date.now() - requestTime > this.maxAge) {
       throw new UnauthorizedException();
     }
 
-    // Compute expected signature
-    const rawBody = (req as any).rawBody || '';
-    const payload = `${timestamp}.${rawBody}`;
-    const expectedSignature = crypto
+    const rawBody = (req as any).rawBody ?? '';
+    const expected = crypto
       .createHmac('sha256', this.secret)
-      .update(payload)
+      .update(`${timestamp}.${rawBody}`)
       .digest('hex');
 
-    // Constant-time comparison
-    if (!crypto.timingSafeEqual(Buffer.from(receivedSignature), Buffer.from(expectedSignature))) {
+    // Constant-time comparison to prevent timing attacks
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(receivedSig, 'hex'), Buffer.from(expected, 'hex'))) {
+        throw new UnauthorizedException();
+      }
+    } catch {
+      // timingSafeEqual throws if buffers differ in length
       throw new UnauthorizedException();
     }
 

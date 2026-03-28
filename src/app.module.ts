@@ -59,6 +59,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { EventStoreModule } from './event-store/event-store.module';
 import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -125,6 +126,7 @@ import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.mid
     ProjectionsModule,
     CqrsModule,
     ProviderPatientModule,
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [
