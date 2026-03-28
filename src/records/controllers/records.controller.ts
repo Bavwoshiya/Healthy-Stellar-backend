@@ -18,8 +18,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { RecordsService } from '../services/records.service';
 import { RecordDownloadService } from '../services/record-download.service';
+import { RecordAttachmentUploadService } from '../services/record-attachment-upload.service';
 import { RelatedRecordsService } from '../services/related-records.service';
 import { CreateRecordDto } from '../dto/create-record.dto';
+import { CreateAttachmentDto } from '../dto/create-attachment.dto';
 import { PaginationQueryDto } from '../dto/pagination-query.dto';
 import { PaginatedRecordsResponseDto } from '../dto/paginated-response.dto';
 import { RecentRecordDto } from '../dto/recent-record.dto';
@@ -40,6 +42,7 @@ export class RecordsController {
   constructor(
     private readonly recordsService: RecordsService,
     private readonly recordDownloadService: RecordDownloadService,
+    private readonly recordAttachmentUploadService: RecordAttachmentUploadService,
     private readonly relatedRecordsService: RelatedRecordsService,
   ) {}
 
@@ -208,6 +211,47 @@ export class RecordsController {
     res.setHeader('Pragma', 'no-cache');
 
     stream.pipe(res);
+  }
+
+  @Post(':id/attachments')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Upload an encrypted attachment to a record',
+    description:
+      'Upload a file (PDF, DICOM, image) that will be encrypted and stored on IPFS. ' +
+      'File size limit: 50MB. Allowed MIME types: application/pdf, image/jpeg, image/png, application/dicom.',
+  })
+  @ApiResponse({ status: 201, description: 'Attachment uploaded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file or validation error' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Record not found' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB
+      },
+    }),
+  )
+  async uploadAttachment(
+    @Param('id') recordId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: CreateAttachmentDto,
+    @Req() req: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const uploadedBy: string = req.user?.userId ?? req.user?.id;
+
+    return this.recordAttachmentUploadService.uploadAttachment(
+      recordId,
+      file,
+      uploadedBy,
+    );
+  }
+
   @Get(':id/related')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

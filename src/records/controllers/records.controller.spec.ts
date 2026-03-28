@@ -4,6 +4,7 @@ import { Readable } from 'stream';
 import { RecordsController } from './records.controller';
 import { RecordsService } from '../services/records.service';
 import { RecordDownloadService } from '../services/record-download.service';
+import { RecordAttachmentUploadService } from '../services/record-attachment-upload.service';
 import { RecordType } from '../dto/create-record.dto';
 import { SortBy, SortOrder } from '../dto/pagination-query.dto';
 import { MedicalPermissionsService } from '../../roles/services/medical-permissions.service';
@@ -24,6 +25,13 @@ describe('RecordsController', () => {
 
   const mockRecordDownloadService = {
     download: jest.fn(),
+  };
+
+  const mockRecordAttachmentUploadService = {
+    uploadAttachment: jest.fn(),
+    getAttachment: jest.fn(),
+    listAttachments: jest.fn(),
+    deleteAttachment: jest.fn(),
   };
 
   const mockPermissionsService = {
@@ -50,6 +58,10 @@ describe('RecordsController', () => {
         {
           provide: RecordDownloadService,
           useValue: mockRecordDownloadService,
+        },
+        {
+          provide: RecordAttachmentUploadService,
+          useValue: mockRecordAttachmentUploadService,
         },
         {
           provide: MedicalPermissionsService,
@@ -450,6 +462,259 @@ describe('RecordsController', () => {
 
       // Verify the service returned correct content type
       expect(mockResponse.setHeader).toHaveBeenCalledWith('Content-Type', 'application/dicom');
+    });
+  });
+
+  describe('uploadAttachment', () => {
+    it('should upload attachment and return attachment details', async () => {
+      const recordId = 'record-123';
+      const uploadedBy = 'user-456';
+
+      const mockFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'report.pdf',
+        encoding: '7bit',
+        mimetype: 'application/pdf',
+        size: 1024 * 100, // 100KB
+        destination: '/tmp',
+        filename: 'report.pdf',
+        path: '/tmp/report.pdf',
+        buffer: Buffer.from('file content'),
+      };
+
+      const mockRequest = {
+        user: { userId: uploadedBy },
+      };
+
+      const mockDto = {
+        description: 'Lab report',
+        uploaderEmail: 'provider@hospital.com',
+      };
+
+      mockRecordAttachmentUploadService.uploadAttachment.mockResolvedValue({
+        attachmentId: 'attachment-123',
+        cid: 'QmAttachmentCid123',
+        fileSize: 1024 * 100,
+      });
+
+      const result = await controller.uploadAttachment(
+        recordId,
+        mockFile,
+        mockDto,
+        mockRequest,
+      );
+
+      expect(result).toEqual({
+        attachmentId: 'attachment-123',
+        cid: 'QmAttachmentCid123',
+        fileSize: 1024 * 100,
+      });
+
+      expect(mockRecordAttachmentUploadService.uploadAttachment).toHaveBeenCalledWith(
+        recordId,
+        mockFile,
+        uploadedBy,
+      );
+    });
+
+    it('should throw BadRequestException when no file provided', async () => {
+      const recordId = 'record-123';
+
+      const mockRequest = {
+        user: { userId: 'user-456' },
+      };
+
+      const mockDto = {
+        description: 'Test',
+        uploaderEmail: 'user@test.com',
+      };
+
+      await expect(
+        controller.uploadAttachment(recordId, null as any, mockDto, mockRequest),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should extract userId from JWT token for uploadedBy', async () => {
+      const recordId = 'record-123';
+      const uploadedBy = 'user-from-jwt';
+
+      const mockFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'image.png',
+        encoding: '7bit',
+        mimetype: 'image/png',
+        size: 2048,
+        destination: '/tmp',
+        filename: 'image.png',
+        path: '/tmp/image.png',
+        buffer: Buffer.from('image data'),
+      };
+
+      const mockRequest = {
+        user: { userId: uploadedBy },
+      };
+
+      const mockDto = {
+        uploaderEmail: 'provider@hospital.com',
+      };
+
+      mockRecordAttachmentUploadService.uploadAttachment.mockResolvedValue({
+        attachmentId: 'attachment-456',
+        cid: 'QmImageCid',
+        fileSize: 2048,
+      });
+
+      await controller.uploadAttachment(recordId, mockFile, mockDto, mockRequest);
+
+      expect(mockRecordAttachmentUploadService.uploadAttachment).toHaveBeenCalledWith(
+        recordId,
+        mockFile,
+        uploadedBy,
+      );
+    });
+
+    it('should support PDF file upload', async () => {
+      const recordId = 'record-123';
+
+      const pdfFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'document.pdf',
+        encoding: '7bit',
+        mimetype: 'application/pdf',
+        size: 5120,
+        destination: '/tmp',
+        filename: 'document.pdf',
+        path: '/tmp/document.pdf',
+        buffer: Buffer.from('pdf content'),
+      };
+
+      const mockRequest = {
+        user: { userId: 'user-789' },
+      };
+
+      const mockDto = {
+        description: 'PDF Document',
+        uploaderEmail: 'user@test.com',
+      };
+
+      mockRecordAttachmentUploadService.uploadAttachment.mockResolvedValue({
+        attachmentId: 'att-pdf',
+        cid: 'QmPdf',
+        fileSize: 5120,
+      });
+
+      const result = await controller.uploadAttachment(recordId, pdfFile, mockDto, mockRequest);
+
+      expect(result.cid).toBe('QmPdf');
+    });
+
+    it('should support JPEG file upload', async () => {
+      const recordId = 'record-123';
+
+      const jpegFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'photo.jpg',
+        encoding: '7bit',
+        mimetype: 'image/jpeg',
+        size: 10240,
+        destination: '/tmp',
+        filename: 'photo.jpg',
+        path: '/tmp/photo.jpg',
+        buffer: Buffer.from('jpeg data'),
+      };
+
+      const mockRequest = {
+        user: { userId: 'user-789' },
+      };
+
+      const mockDto = {
+        description: 'Photo',
+        uploaderEmail: 'user@test.com',
+      };
+
+      mockRecordAttachmentUploadService.uploadAttachment.mockResolvedValue({
+        attachmentId: 'att-jpg',
+        cid: 'QmJpeg',
+        fileSize: 10240,
+      });
+
+      const result = await controller.uploadAttachment(recordId, jpegFile, mockDto, mockRequest);
+
+      expect(result.cid).toBe('QmJpeg');
+    });
+
+    it('should support DICOM file upload', async () => {
+      const recordId = 'record-123';
+
+      const dicomFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'scan.dcm',
+        encoding: '7bit',
+        mimetype: 'application/dicom',
+        size: 1024 * 512, // 512KB
+        destination: '/tmp',
+        filename: 'scan.dcm',
+        path: '/tmp/scan.dcm',
+        buffer: Buffer.from('dicom data'),
+      };
+
+      const mockRequest = {
+        user: { userId: 'user-789' },
+      };
+
+      const mockDto = {
+        description: 'CT Scan',
+        uploaderEmail: 'user@test.com',
+      };
+
+      mockRecordAttachmentUploadService.uploadAttachment.mockResolvedValue({
+        attachmentId: 'att-dicom',
+        cid: 'QmDicom',
+        fileSize: 1024 * 512,
+      });
+
+      const result = await controller.uploadAttachment(recordId, dicomFile, mockDto, mockRequest);
+
+      expect(result.cid).toBe('QmDicom');
+    });
+
+    it('should use alternative user id field (id) if userId is not present', async () => {
+      const recordId = 'record-123';
+      const userId = 'user-from-id-field';
+
+      const mockFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: 'file.pdf',
+        encoding: '7bit',
+        mimetype: 'application/pdf',
+        size: 1024,
+        destination: '/tmp',
+        filename: 'file.pdf',
+        path: '/tmp/file.pdf',
+        buffer: Buffer.from('content'),
+      };
+
+      const mockRequest = {
+        user: { id: userId }, // using 'id' instead of 'userId'
+      };
+
+      const mockDto = {
+        uploaderEmail: 'user@test.com',
+      };
+
+      mockRecordAttachmentUploadService.uploadAttachment.mockResolvedValue({
+        attachmentId: 'att-123',
+        cid: 'QmFile',
+        fileSize: 1024,
+      });
+
+      await controller.uploadAttachment(recordId, mockFile, mockDto, mockRequest);
+
+      expect(mockRecordAttachmentUploadService.uploadAttachment).toHaveBeenCalledWith(
+        recordId,
+        mockFile,
+        userId,
+      );
     });
   });
   });

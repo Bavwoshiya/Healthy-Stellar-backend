@@ -6,6 +6,7 @@ import { Record } from './entities/record.entity';
 import { RecordEvent } from './entities/record-event.entity';
 import { RecordSnapshot } from './entities/record-snapshot.entity';
 import { RecordTemplate } from './entities/record-template.entity';
+import { RecordAttachment } from './entities/record-attachment.entity';
 import { RecordsController } from './controllers/records.controller';
 import { RecordTemplateController } from './controllers/record-template.controller';
 import { RecordsService } from './services/records.service';
@@ -22,11 +23,12 @@ import { MedicalRbacModule } from '../roles/medical-rbac.module';
 import { EncryptionModule } from '../encryption/encryption.module';
 import { AuditModule } from '../common/audit/audit.module';
 import { RecordDownloadService } from './services/record-download.service';
+import { RecordAttachmentUploadService } from './services/record-attachment-upload.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Record, RecordEvent, RecordSnapshot, RecordTemplate]),
-    MulterModule.register({ limits: { fileSize: 10 * 1024 * 1024 } }),
+    TypeOrmModule.forFeature([Record, RecordEvent, RecordSnapshot, RecordTemplate, RecordAttachment]),
+    MulterModule.register({ limits: { fileSize: 50 * 1024 * 1024 } }),
     EventEmitterModule.forRoot(),
     CircuitBreakerModule,
     forwardRef(() => AccessControlModule),
@@ -44,6 +46,7 @@ import { RecordDownloadService } from './services/record-download.service';
     IpfsWithBreakerService,
     RecordEventStoreService,
     RecordDownloadService,
+    RecordAttachmentUploadService,
     RecordSyncService,
   ],
   exports: [
@@ -53,6 +56,7 @@ import { RecordDownloadService } from './services/record-download.service';
     IpfsWithBreakerService,
     RecordEventStoreService,
     RecordDownloadService,
+    RecordAttachmentUploadService,
     RecordSyncService,
   ],
 })
