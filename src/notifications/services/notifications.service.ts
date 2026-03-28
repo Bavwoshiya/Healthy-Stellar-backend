@@ -1,14 +1,14 @@
-import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { GraphqlPubSubService } from '../../pubsub/services/graphql-pubsub.service';
 import {
   NotificationEvent,
   NotificationEventType,
 } from '../interfaces/notification-event.interface';
-import { NotificationsGateway } from '../notifications.gateway';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { NotificationTemplateService } from './notification-template.service';
 
 export const MAILER_SERVICE = 'MAILER_SERVICE';
-import { NotificationTemplateService } from './notification-template.service';
 
 @Injectable()
 export class NotificationsService {
@@ -16,9 +16,10 @@ export class NotificationsService {
   private readonly emailEnabled: boolean;
 
   constructor(
-    private readonly gateway: NotificationsGateway,
+    private readonly graphqlPubSubService: GraphqlPubSubService,
     private readonly preferencesService: NotificationPreferencesService,
     private readonly configService: ConfigService,
+    private readonly templateService: NotificationTemplateService,
     @Optional() @Inject(MAILER_SERVICE) private readonly mailerService?: any,
   ) {
     this.emailEnabled =
@@ -101,13 +102,12 @@ export class NotificationsService {
     };
 
     const preferenceKey = this.eventTypeToPreferenceKey(eventType);
-
-    const wsEnabled = preferenceKey
+    const realtimeEnabled = preferenceKey
       ? await this.preferencesService.isChannelEnabled(patientId, 'webSocket', preferenceKey)
       : true;
 
-    if (wsEnabled) {
-      this.gateway.emitNotification(event);
+    if (realtimeEnabled) {
+      await this.publishRealtimeEvent(event);
     }
 
     if (this.emailEnabled && preferenceKey) {
@@ -122,10 +122,6 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Resolve a localized notification message for a patient.
-   * Falls back to English when the preferred language is unsupported or the key is missing.
-   */
   resolveLocalizedNotification(
     eventType: NotificationEventType,
     preferredLanguage: string,
@@ -158,16 +154,58 @@ export class NotificationsService {
     await this.mailerService.sendMail({ to, subject, template, context });
   }
 
-  async sendPatientEmailNotification(
-    patientId: string,
-    subject: string,
-    message: string,
-  ): Promise<void> {
-    this.logger.log(`Email notification queued for patient ${patientId}: ${subject} - ${message}`);
+  private emitEvent(event: NotificationEvent): void {
+    this.publishRealtimeEvent(event).catch((error: any) => {
+      this.logger.warn(`Failed to publish realtime event ${event.eventType}: ${error?.message}`);
+    });
   }
 
-  private emitEvent(event: NotificationEvent): void {
-    this.gateway.emitNotification(event);
+  private async publishRealtimeEvent(event: NotificationEvent): Promise<void> {
+    const patientId = this.resolvePatientId(event.actorId, event.metadata);
+    const timestamp = event.timestamp.toISOString();
+
+    switch (event.eventType) {
+      case NotificationEventType.RECORD_ACCESSED:
+        await this.graphqlPubSubService.publishRecordAccessed(patientId, {
+          patientId,
+          actorId: event.actorId,
+          recordId: event.resourceId,
+          timestamp,
+        });
+        return;
+      case NotificationEventType.ACCESS_GRANTED:
+        await this.graphqlPubSubService.publishAccessGranted(patientId, {
+          patientId,
+          actorId: event.actorId,
+          grantId: event.resourceId,
+          granteeId: event.metadata?.granteeId,
+          timestamp,
+        });
+        return;
+      case NotificationEventType.ACCESS_REVOKED:
+        await this.graphqlPubSubService.publishAccessRevoked(patientId, {
+          patientId,
+          actorId: event.actorId,
+          grantId: event.resourceId,
+          reason: event.metadata?.revocationReason,
+          timestamp,
+        });
+        return;
+      case NotificationEventType.RECORD_UPLOADED:
+        await this.graphqlPubSubService.publishRecordUploaded(patientId, {
+          patientId,
+          actorId: event.actorId,
+          recordId: event.resourceId,
+          timestamp,
+        });
+        return;
+      default:
+        return;
+    }
+  }
+
+  private resolvePatientId(actorId: string, metadata?: Record<string, any>): string {
+    return metadata?.targetUserId ?? metadata?.patientId ?? actorId;
   }
 
   private async sendEmailNotification(
@@ -178,6 +216,7 @@ export class NotificationsService {
       this.logger.debug(`Email skipped (no mailer): ${event.eventType} for patient ${patientId}`);
       return;
     }
+
     try {
       await this.mailerService.sendMail({
         to: patientId,
@@ -191,8 +230,8 @@ export class NotificationsService {
           ...event.metadata,
         },
       });
-    } catch (err: any) {
-      this.logger.error(`Failed to send email for ${event.eventType}: ${err.message}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to send email for ${event.eventType}: ${error?.message}`);
     }
   }
 
