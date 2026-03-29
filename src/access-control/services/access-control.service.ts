@@ -282,23 +282,31 @@ export class AccessControlService {
     return grant;
   }
 
-  async expireEmergencyGrants(): Promise<number> {
-    const result = await this.grantRepository.update(
-      {
+  async expireEmergencyGrants(): Promise<AccessGrant[]> {
+    const grants = await this.grantRepository.find({
+      where: {
         isEmergency: true,
         status: GrantStatus.ACTIVE,
         expiresAt: LessThanOrEqual(new Date()),
       },
-      {
-        status: GrantStatus.EXPIRED,
-      },
+    });
+
+    if (grants.length === 0) return [];
+
+    await this.grantRepository.update(
+      grants.map((g) => g.id),
+      { status: GrantStatus.EXPIRING },
     );
 
-    const expired = result.affected || 0;
-    if (expired > 0) {
-      this.logger.log(`Expired ${expired} emergency access grants`);
-    }
-    return expired;
+    this.logger.log(`Marked ${grants.length} emergency grants as EXPIRING`);
+    return grants.map((g) => ({ ...g, status: GrantStatus.EXPIRING }));
+  }
+
+  async finalizeExpiredGrant(grantId: string, sorobanTxHash: string): Promise<void> {
+    await this.grantRepository.update(grantId, {
+      status: GrantStatus.EXPIRED,
+      sorobanTxHash,
+    });
   }
 
   async getPatientGrants(patientId: string): Promise<AccessGrant[]> {

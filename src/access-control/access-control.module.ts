@@ -16,6 +16,6 @@ import { AccessRequestService } from './services/access-request.service';
   imports: [TypeOrmModule.forFeature([AccessGrant, AccessRequest, User]), NotificationsModule],
   controllers: [AccessControlController, UsersEmergencyAccessController, AccessRequestController],
   providers: [AccessControlService, SorobanQueueService, EmergencyAccessCleanupService, AccessRequestService],
-  exports: [AccessControlService, AccessRequestService],
+  exports: [AccessControlService, AccessRequestService, EmergencyAccessCleanupService],
 })
 export class AccessControlModule {}
