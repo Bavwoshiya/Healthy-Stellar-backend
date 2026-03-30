@@ -137,6 +137,38 @@ export class EventStoreService {
     await manager.save(AggregateSnapshotEntity, snapshot);
   }
 
+  async count(): Promise<number> {
+    return this.eventRepo.count();
+  }
+
+  /**
+   * Stream all events from the event store for replaying (rebuilding projections).
+   * Uses batched loading to maintain memory efficiency.
+   */
+  async *streamAll(fromVersion = 0): AsyncGenerator<{ event: DomainEvent; version: number }> {
+    const batchSize = 100;
+    let currentVersion = fromVersion;
+
+    while (true) {
+      const rows = await this.eventRepo
+        .createQueryBuilder('e')
+        .where('e.version > :currentVersion', { currentVersion })
+        .orderBy('e.version', 'ASC')
+        .take(batchSize)
+        .getMany();
+
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        yield {
+          event: this._rowToDomainEvent(row),
+          version: row.version,
+        };
+        currentVersion = row.version;
+      }
+    }
+  }
+
   private _rowToDomainEvent(row: EventEntity): DomainEvent {
     return {
       eventType: row.eventType,

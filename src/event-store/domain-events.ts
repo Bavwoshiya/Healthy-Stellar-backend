@@ -5,6 +5,7 @@ export interface DomainEvent {
   readonly aggregateType: string;
   readonly payload: Record<string, unknown>;
   readonly metadata?: Record<string, unknown>;
+  readonly version?: number;
 }
 
 // ── Concrete domain events ────────────────────────────────────────────────────
