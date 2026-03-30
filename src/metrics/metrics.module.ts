@@ -22,6 +22,7 @@ import {
   QueueDepthGauge,
   ActivePatientsTotalGauge,
   ActiveProvidersTotalGauge,
+  SubscriptionsActiveGauge,
 } from './custom-metrics.service';
 import { HttpMetricsInterceptor } from './interceptors/http-metrics.interceptor';
 import { DbMetricsSubscriber } from './subscribers/db-metrics.subscriber';
@@ -71,6 +72,7 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
     QueueDepthGauge,
     ActivePatientsTotalGauge,
     ActiveProvidersTotalGauge,
+    SubscriptionsActiveGauge,
     // Interceptor, subscriber, collectors
     HttpMetricsInterceptor,
     DbMetricsSubscriber,

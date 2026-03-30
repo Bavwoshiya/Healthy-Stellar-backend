@@ -5,6 +5,7 @@ import { SubscriptionsResolver } from './subscriptions.resolver';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionAuthGuard } from './guards/subscription-auth.guard';
 import { PubSubModule } from '../pubsub/pubsub.module';
+import { SubscriptionsActiveGauge } from '../metrics/custom-metrics.service';
 
 @Module({
   imports: [
@@ -17,7 +18,12 @@ import { PubSubModule } from '../pubsub/pubsub.module';
       inject: [ConfigService],
     }),
   ],
-  providers: [SubscriptionsResolver, SubscriptionsService, SubscriptionAuthGuard],
+  providers: [
+    SubscriptionsResolver,
+    SubscriptionsService,
+    SubscriptionAuthGuard,
+    SubscriptionsActiveGauge,
+  ],
   exports: [SubscriptionsService],
 })
 export class SubscriptionsModule {}
