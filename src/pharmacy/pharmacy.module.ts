@@ -1,23 +1,21 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
-import { ConfigModule } from '@nestjs/config';
 import { Drug } from './entities/drug.entity';
 import { Prescription } from './entities/prescription.entity';
-import { SafetyAlert } from './entities/safety-alert.entity';
+import { DrugInteraction } from './entities/drug-interaction.entity';
 import { PharmacyController } from './controllers/pharmacy.controller';
+import { CdsHooksController } from './controllers/cds-hooks.controller';
 import { PharmacyService } from './services/pharmacy.service';
-import { PrescriptionValidationService } from './services/prescription-validation.service';
-import { PdmpService } from './services/pdmp.service';
+import { DrugInteractionService } from './services/drug-interaction.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Drug, Prescription, SafetyAlert]),
+    TypeOrmModule.forFeature([Drug, Prescription, DrugInteraction]),
     HttpModule,
-    ConfigModule,
   ],
-  controllers: [PharmacyController],
-  providers: [PharmacyService, PrescriptionValidationService, PdmpService],
-  exports: [PharmacyService, PrescriptionValidationService],
+  controllers: [PharmacyController, CdsHooksController],
+  providers: [PharmacyService, DrugInteractionService],
+  exports: [PharmacyService, DrugInteractionService],
 })
 export class PharmacyModule {}
