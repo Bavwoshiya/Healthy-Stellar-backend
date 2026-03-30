@@ -8,14 +8,12 @@ import { ProjectionRebuildService } from './projection-rebuild.service';
 import { CheckpointService } from '../checkpoint/checkpoint.service';
 import { RebuildStatus } from '../dto/projection-status.dto';
 
+import { DropdownOptions } from '../../common/dto/dropdown-options.dto';
+import { EventStoreService } from '../../event-store/event-store.service';
+import { IEvent } from '@nestjs/cqrs';
+
 interface RebuildJobData {
   projectorName: string;
-}
-
-// Stub interface — replace with actual EventStore service
-interface EventStore {
-  streamAll(fromVersion: number): AsyncGenerator<{ event: unknown; version: number }>;
-  count(): Promise<number>;
 }
 
 @Processor('projection-rebuild')
@@ -27,8 +25,7 @@ export class ProjectionRebuildProcessor {
     private readonly checkpoints: CheckpointService,
     private readonly eventBus: EventBus,
     @InjectQueue('projection-dlq') private readonly dlq: Queue,
-    // TODO: inject actual EventStore
-    // private readonly eventStore: EventStore,
+    private readonly eventStore: EventStoreService,
   ) {}
 
   @Process('rebuild')
@@ -40,10 +37,11 @@ export class ProjectionRebuildProcessor {
       // Reset checkpoint so the projector reprocesses from version 0
       await this.checkpoints.reset(projectorName);
 
-      // TODO: replace stub with actual event store stream
-      // const total = await this.eventStore.count();
-      const total = 0;
+      // Fetch real total from event store
+      const total = await this.eventStore.count();
       let processed = 0;
+
+      this.logger.log(`Rebuilding ${projectorName} with ${total} events`);
 
       await this.rebuildService.updateStatus(projectorName, {
         totalEvents: total,
@@ -51,17 +49,18 @@ export class ProjectionRebuildProcessor {
         progressPercent: 0,
       });
 
-      // TODO: stream and republish events
-      // for await (const { event, version } of this.eventStore.streamAll(0)) {
-      //   await this.eventBus.publish(event as IEvent);
-      //   processed++;
-      //   if (processed % 100 === 0) {
-      //     await this.rebuildService.updateStatus(projectorName, {
-      //       processedEvents: processed,
-      //       progressPercent: Math.floor((processed / total) * 100),
-      //     });
-      //   }
-      // }
+      // Stream and republish all events through the EventBus
+      for await (const { event, version } of this.eventStore.streamAll(0)) {
+        await this.eventBus.publish(event as unknown as IEvent);
+        processed++;
+        
+        if (processed % 100 === 0 || processed === total) {
+          await this.rebuildService.updateStatus(projectorName, {
+            processedEvents: processed,
+            progressPercent: total > 0 ? Math.floor((processed / total) * 100) : 100,
+          });
+        }
+      }
 
       await this.rebuildService.updateStatus(projectorName, {
         status: RebuildStatus.COMPLETED,

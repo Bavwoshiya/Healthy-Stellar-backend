@@ -10,28 +10,15 @@ import { Repository, DataSource } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RecordVersion } from './record-version.entity';
 import { AmendRecordDto } from './dto/amend-record.dto';
-import { PaginatedVersionHistoryDto, VersionMetaDto } from './version-history.dto.ts';
+import { PaginatedVersionHistoryDto, VersionMetaDto } from './dto/version-history.dto';
 import { RecordAmendedEvent } from '../events/record-amended.event';
+import { AccessControlService } from '../../access-control/services/access-control.service';
+import { IpfsService } from '../services/ipfs.service';
+import { StellarService } from '../services/stellar.service';
+import { Record } from '../entities/record.entity';
+import { UserRole } from '../../auth/entities/user.entity';
 
-// Stub interfaces — replace with actual imports from their respective modules
-interface RecordAccessCheckService {
-  assertCanAccess(recordId: string, userId: string): Promise<void>;
-  assertIsOwnerOrAdmin(recordId: string, userId: string): Promise<void>;
-  getGranteeIds(recordId: string): Promise<string[]>;
-}
-
-interface IpfsService {
-  uploadVersion(recordId: string, file: Express.Multer.File): Promise<{ cid: string }>;
-}
-
-interface SorobanRecordService {
-  anchorAmendment(params: {
-    recordId: string;
-    version: number;
-    cid: string;
-    amendedBy: string;
-  }): Promise<{ txHash: string }>;
-}
+// Stub types removed - using actual services
 
 @Injectable()
 export class RecordVersionService {
@@ -40,12 +27,13 @@ export class RecordVersionService {
   constructor(
     @InjectRepository(RecordVersion)
     private readonly versionRepo: Repository<RecordVersion>,
+    @InjectRepository(Record)
+    private readonly recordRepo: Repository<Record>,
     private readonly dataSource: DataSource,
     private readonly eventEmitter: EventEmitter2,
-    // TODO: inject when modules are available
-    // private readonly accessCheck: RecordAccessCheckService,
-    // private readonly ipfs: IpfsService,
-    // private readonly soroban: SorobanRecordService,
+    private readonly accessCheck: AccessControlService,
+    private readonly ipfs: IpfsService,
+    private readonly stellar: StellarService,
   ) {}
 
   async amend(
@@ -55,7 +43,12 @@ export class RecordVersionService {
     userId: string,
     encryptedDek: string,
   ): Promise<VersionMetaDto> {
-    // await this.accessCheck.assertIsOwnerOrAdmin(recordId, userId);
+    const record = await this.recordRepo.findOne({ where: { id: recordId } });
+    if (!record) throw new NotFoundException(`Record ${recordId} not found`);
+
+    if (record.patientId !== userId) {
+      throw new ForbiddenException('Only the record owner may amend this record');
+    }
 
     return this.dataSource.transaction(async (manager) => {
       const versionRepo = manager.getRepository(RecordVersion);
@@ -74,13 +67,16 @@ export class RecordVersionService {
 
       const nextVersion = latest.version + 1;
 
-      // TODO: replace stub with actual IPFS upload
-      // const { cid } = await this.ipfs.uploadVersion(recordId, file);
-      const cid = `stub-cid-v${nextVersion}`;
+      // Real IPFS upload
+      const cid = await this.ipfs.upload(file.buffer);
 
-      // TODO: replace stub with actual Soroban call
-      // const { txHash } = await this.soroban.anchorAmendment({ recordId, version: nextVersion, cid, amendedBy: userId });
-      const stellarTxHash: string | null = null;
+      // Real Stellar anchoring
+      let stellarTxHash: string | null = null;
+      try {
+        stellarTxHash = await this.stellar.anchorCid(record.patientId, cid);
+      } catch (err) {
+        this.logger.warn(`Stellar anchoring failed, continuing: ${err.message}`);
+      }
 
       const newVersion = versionRepo.create({
         recordId,
@@ -94,9 +90,11 @@ export class RecordVersionService {
 
       const saved = await versionRepo.save(newVersion);
 
-      // TODO: replace stub with actual grantee lookup
-      // const granteeIds = await this.accessCheck.getGranteeIds(recordId);
-      const granteeIds: string[] = [];
+      // Real grantee lookup via AccessControlService
+      const grants = await this.accessCheck.getPatientGrants(record.patientId);
+      const granteeIds = grants
+        .filter(g => g.recordIds.includes('*') || g.recordIds.includes(recordId))
+        .map(g => g.granteeId);
 
       this.eventEmitter.emit(
         'record.amended',
@@ -121,7 +119,16 @@ export class RecordVersionService {
     page: number,
     limit: number,
   ): Promise<PaginatedVersionHistoryDto> {
-    // await this.accessCheck.assertCanAccess(recordId, userId);
+    const record = await this.recordRepo.findOne({ where: { id: recordId } });
+    if (!record) throw new NotFoundException(`Record ${recordId} not found`);
+
+    const hasAccess = await this.accessCheck.canAccessRecord(
+      record.patientId,
+      userId,
+      UserRole.PATIENT, // Default role check
+      recordId,
+    );
+    if (!hasAccess) throw new ForbiddenException('Access denied');
 
     const [rows, total] = await this.versionRepo.findAndCount({
       where: { recordId },
@@ -143,14 +150,23 @@ export class RecordVersionService {
     version: number,
     userId: string,
   ): Promise<VersionMetaDto> {
-    // await this.accessCheck.assertCanAccess(recordId, userId);
+    const record = await this.recordRepo.findOne({ where: { id: recordId } });
+    if (!record) throw new NotFoundException(`Record ${recordId} not found`);
 
-    const record = await this.versionRepo.findOne({ where: { recordId, version } });
-    if (!record) {
+    const hasAccess = await this.accessCheck.canAccessRecord(
+      record.patientId,
+      userId,
+      UserRole.PATIENT,
+      recordId,
+    );
+    if (!hasAccess) throw new ForbiddenException('Access denied');
+
+    const versionData = await this.versionRepo.findOne({ where: { recordId, version } });
+    if (!versionData) {
       throw new NotFoundException(`Version ${version} of record ${recordId} not found.`);
     }
 
-    return this.toMeta(record);
+    return this.toMeta(versionData);
   }
 
   async getLatestOrVersion(
@@ -158,7 +174,16 @@ export class RecordVersionService {
     userId: string,
     version?: number,
   ): Promise<VersionMetaDto> {
-    // await this.accessCheck.assertCanAccess(recordId, userId);
+    const record = await this.recordRepo.findOne({ where: { id: recordId } });
+    if (!record) throw new NotFoundException(`Record ${recordId} not found`);
+
+    const hasAccess = await this.accessCheck.canAccessRecord(
+      record.patientId,
+      userId,
+      UserRole.PATIENT,
+      recordId,
+    );
+    if (!hasAccess) throw new ForbiddenException('Access denied');
 
     if (version !== undefined) {
       return this.getSpecificVersion(recordId, version, userId);

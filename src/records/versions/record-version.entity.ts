@@ -1,10 +1,11 @@
-import { Entity, Column, Index, ManyToOne, JoinColumn } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { Entity, Column, Index, ManyToOne, JoinColumn, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('record_versions')
 @Index(['recordId', 'version'], { unique: true })
 @Index(['recordId', 'createdAt'])
-export class RecordVersion extends BaseEntity {
+export class RecordVersion {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
   @Index()
   @Column({ name: 'record_id' })
   recordId: string;
