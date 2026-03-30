@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, FindOptionsWhere, DataSource } from 'typeorm';
 import { Billing } from '../entities/billing.entity';
 import { BillingLineItem } from '../entities/billing-line-item.entity';
 import {
@@ -9,7 +9,6 @@ import {
   AddLineItemDto,
   UpdateLineItemDto,
 } from '../dto/billing.dto';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class BillingService {
@@ -18,10 +17,18 @@ export class BillingService {
     private readonly billingRepository: Repository<Billing>,
     @InjectRepository(BillingLineItem)
     private readonly lineItemRepository: Repository<BillingLineItem>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
+  private async generateInvoiceNumber(): Promise<string> {
+    const result = await this.dataSource.query(`SELECT nextval('billing_invoice_seq') AS seq`);
+    const seq = String(result[0].seq).padStart(8, '0');
+    return `INV-${seq}`;
+  }
+
   async create(createDto: CreateBillingDto): Promise<Billing> {
-    const invoiceNumber = `INV-${Date.now()}-${uuidv4().substring(0, 4).toUpperCase()}`;
+    const invoiceNumber = await this.generateInvoiceNumber();
 
     let totalCharges = 0;
     const lineItems: BillingLineItem[] = [];
