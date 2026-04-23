@@ -1,17 +1,17 @@
 import { Controller, Get, UseGuards, Version, VERSION_NEUTRAL } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
-import { RedisHealthIndicator } from './indicators/redis.health';
-import { IpfsHealthIndicator } from './indicators/ipfs.health';
-import { StellarHealthIndicator } from './indicators/stellar.health';
-import { DetailedHealthIndicator } from './indicators/detailed-health.indicator';
-import { Public } from '../common/decorators/public.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
+import { Public } from '../common/decorators/public.decorator';
 import { RegionalDatabaseService } from '../data-residency/services/regional-database.service';
 import { RegionalIpfsService } from '../data-residency/services/regional-ipfs.service';
 import { DataResidencyRegion } from '../enums/data-residency.enum';
+import { DetailedHealthIndicator } from './indicators/detailed-health.indicator';
+import { IpfsHealthIndicator } from './indicators/ipfs.health';
+import { RedisHealthIndicator } from './indicators/redis.health';
+import { StellarHealthIndicator } from './indicators/stellar.health';
 
 @ApiTags('health')
 @Version(VERSION_NEUTRAL)
@@ -25,6 +25,7 @@ export class HealthController {
     private ipfs: IpfsHealthIndicator,
     private stellar: StellarHealthIndicator,
     private detailedHealth: DetailedHealthIndicator,
+    private syntheticProbe: SyntheticProbeIndicator,
     private circuitBreaker: CircuitBreakerService,
     private regionalDatabase: RegionalDatabaseService,
     private regionalIpfs: RegionalIpfsService,
@@ -94,14 +95,21 @@ export class HealthController {
       ),
     ]);
 
-    const ipfsResult = Object.fromEntries(
-      ipfsHealth.map(({ region, nodes }) => [region, nodes]),
-    );
+    const ipfsResult = Object.fromEntries(ipfsHealth.map(({ region, nodes }) => [region, nodes]));
 
     return {
       database: dbHealth,
       ipfs: ipfsResult,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  @Get('synthetic')
+  @HealthCheck()
+  @ApiOperation({ summary: 'Synthetic probes for critical user journeys' })
+  @ApiResponse({ status: 200, description: 'Business-level availability validated' })
+  @ApiResponse({ status: 503, description: 'Critical user journey unavailable' })
+  async checkSyntheticProbes() {
+    return this.health.check([() => this.syntheticProbe.isHealthy('synthetic-probe')]);
   }
 }
