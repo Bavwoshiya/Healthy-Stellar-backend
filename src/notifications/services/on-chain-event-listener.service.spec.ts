@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { OnChainEventListenerService, OnChainEvent } from './on-chain-event-listener.service';
-import { NotificationsService } from './notifications.service';
+import { NotificationOutboxService } from './notification-outbox.service';
 import { NotificationEventType } from '../interfaces/notification-event.interface';
 
 jest.useFakeTimers();
@@ -19,12 +19,14 @@ function buildRedis() {
 }
 
 async function createService() {
+  const outboxService = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       OnChainEventListenerService,
       {
-        provide: NotificationsService,
-        useValue: { notifyOnChainEvent: jest.fn().mockResolvedValue(undefined) },
+        provide: NotificationOutboxService,
+        useValue: outboxService,
       },
       { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
       { provide: 'PROM_METRIC_NOTIFICATIONS_EVENT_LISTENER_UP', useValue: mockGauge },
@@ -38,63 +40,125 @@ async function createService() {
   (service as any).redis = buildRedis();
   jest.spyOn(service as any, '_openConnection').mockResolvedValue(undefined);
 
-  return { service, module, notificationsService: module.get(NotificationsService) as jest.Mocked<NotificationsService> };
+  return { service, module, outboxService };
 }
 
 describe('OnChainEventListenerService', () => {
   afterEach(() => jest.clearAllMocks());
 
   describe('handleOnChainEvent', () => {
-    it('maps new_record → RECORD_UPLOADED', async () => {
-      const { service, notificationsService } = await createService();
-      const event: OnChainEvent = { type: 'new_record', patientId: 'p1', actorId: 'sys', resourceId: 'r1', txHash: 'tx1' };
+    it('enqueues new_record → RECORD_UPLOADED to the outbox with a stable dedupe key', async () => {
+      const { service, outboxService } = await createService();
+      const event: OnChainEvent = {
+        type: 'new_record',
+        patientId: 'p1',
+        actorId: 'sys',
+        resourceId: 'r1',
+        txHash: 'tx1',
+      };
+
       await service.handleOnChainEvent(event);
-      expect(notificationsService.notifyOnChainEvent).toHaveBeenCalledWith(
-        NotificationEventType.RECORD_UPLOADED, 'sys', 'r1', 'p1', expect.objectContaining({ txHash: 'tx1' }),
+
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        'tx1:new_record',
+        expect.objectContaining({
+          eventType: NotificationEventType.RECORD_UPLOADED,
+          actorId: 'sys',
+          resourceId: 'r1',
+          metadata: expect.objectContaining({ txHash: 'tx1' }),
+        }),
+        'p1',
       );
     });
 
-    it('maps access_grant → ACCESS_GRANTED', async () => {
-      const { service, notificationsService } = await createService();
-      await service.handleOnChainEvent({ type: 'access_grant', patientId: 'p1', actorId: 'doc1', resourceId: 'r1' });
-      expect(notificationsService.notifyOnChainEvent).toHaveBeenCalledWith(
-        NotificationEventType.ACCESS_GRANTED, 'doc1', 'r1', 'p1', expect.any(Object),
+    it('enqueues access_grant → ACCESS_GRANTED to the outbox', async () => {
+      const { service, outboxService } = await createService();
+      await service.handleOnChainEvent({
+        type: 'access_grant',
+        patientId: 'p1',
+        actorId: 'doc1',
+        resourceId: 'r1',
+        txHash: 'tx2',
+      });
+
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        'tx2:access_grant',
+        expect.objectContaining({ eventType: NotificationEventType.ACCESS_GRANTED }),
+        'p1',
       );
     });
 
-    it('maps access_revoke → ACCESS_REVOKED', async () => {
-      const { service, notificationsService } = await createService();
-      await service.handleOnChainEvent({ type: 'access_revoke', patientId: 'p1', actorId: 'doc1', resourceId: 'r1' });
-      expect(notificationsService.notifyOnChainEvent).toHaveBeenCalledWith(
-        NotificationEventType.ACCESS_REVOKED, 'doc1', 'r1', 'p1', expect.any(Object),
+    it('enqueues access_revoke → ACCESS_REVOKED to the outbox', async () => {
+      const { service, outboxService } = await createService();
+      await service.handleOnChainEvent({
+        type: 'access_revoke',
+        patientId: 'p1',
+        actorId: 'doc1',
+        resourceId: 'r1',
+        txHash: 'tx3',
+      });
+
+      expect(outboxService.enqueue).toHaveBeenCalledWith(
+        'tx3:access_revoke',
+        expect.objectContaining({ eventType: NotificationEventType.ACCESS_REVOKED }),
+        'p1',
       );
     });
 
-    it('warns and skips unknown event types', async () => {
-      const { service, notificationsService } = await createService();
-      await service.handleOnChainEvent({ type: 'unknown' as any, patientId: 'p1', actorId: 'sys', resourceId: 'r1' });
-      expect(notificationsService.notifyOnChainEvent).not.toHaveBeenCalled();
+    it('warns and skips unknown event types without enqueuing', async () => {
+      const { service, outboxService } = await createService();
+      await service.handleOnChainEvent({
+        type: 'unknown' as any,
+        patientId: 'p1',
+        actorId: 'sys',
+        resourceId: 'r1',
+      });
+
+      expect(outboxService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('uses ledgerSequence in dedupe key when txHash is absent', async () => {
+      const { service, outboxService } = await createService();
+      await service.handleOnChainEvent({
+        type: 'new_record',
+        patientId: 'p1',
+        actorId: 'sys',
+        resourceId: 'r1',
+        ledgerSequence: 42,
+      });
+
+      const dedupeKey: string = outboxService.enqueue.mock.calls[0][0];
+      expect(dedupeKey).toContain('42');
+      expect(dedupeKey).toContain('new_record');
     });
 
     it('persists ledgerSequence to Redis when provided', async () => {
       const { service } = await createService();
       const redis = (service as any).redis;
-      await service.handleOnChainEvent({ type: 'new_record', patientId: 'p1', actorId: 'sys', resourceId: 'r1', ledgerSequence: 42 });
-      expect(redis.set).toHaveBeenCalledWith('notifications:last_processed_ledger', '42');
+      await service.handleOnChainEvent({
+        type: 'new_record',
+        patientId: 'p1',
+        actorId: 'sys',
+        resourceId: 'r1',
+        ledgerSequence: 42,
+      });
+
+      expect(redis.set).toHaveBeenCalledWith(
+        'notifications:last_processed_ledger',
+        '42',
+      );
     });
   });
 
   describe('reconnection logic', () => {
     it('schedules reconnect with exponential backoff on _scheduleReconnect()', () => {
       jest.spyOn(global, 'setTimeout');
-      const { service } = require('./on-chain-event-listener.service');
-      // Use a fresh instance via createService
       return createService().then(({ service }) => {
         service._scheduleReconnect();
         expect(setTimeout).toHaveBeenCalled();
         const [, delay] = (setTimeout as jest.Mock).mock.calls.at(-1)!;
-        expect(delay).toBeGreaterThanOrEqual(800);   // 1000 * (1 - 0.2)
-        expect(delay).toBeLessThanOrEqual(1200);     // 1000 * (1 + 0.2)
+        expect(delay).toBeGreaterThanOrEqual(800);  // 1000 * (1 - 0.2)
+        expect(delay).toBeLessThanOrEqual(1200);    // 1000 * (1 + 0.2)
       });
     });
 
