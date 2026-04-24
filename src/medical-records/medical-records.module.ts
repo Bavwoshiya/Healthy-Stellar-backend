@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule } from '@nestjs/config';
 import { MedicalRecord } from './entities/medical-record.entity';
 import { MedicalRecordVersion } from './entities/medical-record-version.entity';
 import { MedicalHistory } from './entities/medical-history.entity';
@@ -35,6 +36,7 @@ import { ReportProcessor } from './processors/report.processor';
 
 @Module({
   imports: [
+    ConfigModule,
     AccessControlModule,
     ProviderPatientModule,
     TypeOrmModule.forFeature([
