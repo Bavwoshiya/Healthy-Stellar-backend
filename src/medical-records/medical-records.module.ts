@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule } from '@nestjs/config';
 import { MedicalRecord } from './entities/medical-record.entity';
 import { MedicalRecordVersion } from './entities/medical-record-version.entity';
 import { MedicalHistory } from './entities/medical-history.entity';
@@ -10,6 +11,7 @@ import { MedicalRecordConsent } from './entities/medical-record-consent.entity';
 import { ClinicalNote } from './entities/clinical-note.entity';
 import { ReportJob } from './entities/report-job.entity';
 import { AccessControlModule } from '../access-control/access-control.module';
+import { ProviderPatientModule } from '../provider-patient/provider-patient.module';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 
 import { MedicalRecordsService } from './services/medical-records.service';
@@ -34,7 +36,9 @@ import { ReportProcessor } from './processors/report.processor';
 
 @Module({
   imports: [
+    ConfigModule,
     AccessControlModule,
+    ProviderPatientModule,
     TypeOrmModule.forFeature([
       MedicalRecord,
       MedicalRecordVersion,

@@ -72,7 +72,12 @@ export class Appointment {
   @Column({ name: 'is_telemedicine', default: false })
   isTelemedicine: boolean;
 
-  @Column({ name: 'telemedicine_link', nullable: true })
+  /** Cryptographically random room identifier – never exposed in list endpoints. */
+  @Column({ name: 'telemedicine_room_id', nullable: true, select: false })
+  telemedicineRoomId: string;
+
+  /** Kept for backwards-compat; populated with the secure room URL on create. */
+  @Column({ name: 'telemedicine_link', nullable: true, select: false })
   telemedicineLink: string;
 
   @Column({ name: 'reminder_sent', default: false })

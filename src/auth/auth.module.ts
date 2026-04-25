@@ -9,6 +9,7 @@ import { User } from './entities/user.entity';
 import { MfaEntity } from './entities/mfa.entity';
 import { SessionEntity } from './entities/session.entity';
 import { ApiKey } from './entities/api-key.entity';
+import { ProviderAvailability } from './entities/provider-availability.entity';
 import { AuditLogEntity } from '../common/audit/audit-log.entity';
 
 // Services
@@ -18,6 +19,7 @@ import { AuthTokenService } from './services/auth-token.service';
 import { MfaService } from './services/mfa.service';
 import { SessionManagementService } from './services/session-management.service';
 import { ApiKeyService } from './services/api-key.service';
+import { ProviderAvailabilityService } from './services/provider-availability.service';
 import { AuditService } from '../common/audit/audit.service';
 
 // Strategies
@@ -36,9 +38,14 @@ import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { ProviderDirectoryService } from './services/provider-directory.service';
 
+import { RefreshTokenStoreService } from './services/refresh-token-store.service';
+import { SessionCleanupTask } from './tasks/session-cleanup.task';
+import { SecretRotationService } from './services/secret-rotation.service';
+import { SecretRotationController } from './controllers/secret-rotation.controller';
+
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, ApiKey, AuditLogEntity]),
+    TypeOrmModule.forFeature([User, MfaEntity, SessionEntity, ApiKey, ProviderAvailability, AuditLogEntity]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -59,16 +66,20 @@ import { ProviderDirectoryService } from './services/provider-directory.service'
     MfaService,
     SessionManagementService,
     ApiKeyService,
+    ProviderAvailabilityService,
     AuditService,
     ProviderDirectoryService,
+    SecretRotationService,
+    RefreshTokenStoreService,
     ApiKeyStrategy,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     RolesGuard,
     MfaVerifiedGuard,
     ApiKeyGuard,
+    SessionCleanupTask,
   ],
-  controllers: [AuthController, MfaController, ProvidersController],
+  controllers: [AuthController, MfaController, ProvidersController, SecretRotationController],
   exports: [
     AuthService,
     PasswordValidationService,
@@ -76,8 +87,11 @@ import { ProviderDirectoryService } from './services/provider-directory.service'
     MfaService,
     SessionManagementService,
     ApiKeyService,
+    ProviderAvailabilityService,
     AuditService,
     ProviderDirectoryService,
+    SecretRotationService,
+    RefreshTokenStoreService,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
     RolesGuard,
@@ -85,4 +99,4 @@ import { ProviderDirectoryService } from './services/provider-directory.service'
     ApiKeyGuard,
   ],
 })
-export class AuthModule {}
+export class AuthModule { }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule } from '@nestjs/config';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
@@ -22,16 +23,19 @@ import {
   QueueDepthGauge,
   ActivePatientsTotalGauge,
   ActiveProvidersTotalGauge,
+  SubscriptionsActiveGauge,
 } from './custom-metrics.service';
 import { HttpMetricsInterceptor } from './interceptors/http-metrics.interceptor';
 import { DbMetricsSubscriber } from './subscribers/db-metrics.subscriber';
 import { QueueMetricsCollector } from './collectors/queue-metrics.collector';
 import { PatientProviderMetricsCollector } from './collectors/patient-provider-metrics.collector';
+import { SloService } from './slo.service';
 import { Patient } from '../patients/entities/patient.entity';
 import { QUEUE_NAMES } from '../queues/queue.constants';
 
 @Module({
   imports: [
+    ConfigModule,
     PrometheusModule.register({
       defaultMetrics: {
         enabled: true,
@@ -71,12 +75,14 @@ import { QUEUE_NAMES } from '../queues/queue.constants';
     QueueDepthGauge,
     ActivePatientsTotalGauge,
     ActiveProvidersTotalGauge,
+    SubscriptionsActiveGauge,
     // Interceptor, subscriber, collectors
     HttpMetricsInterceptor,
     DbMetricsSubscriber,
     QueueMetricsCollector,
     PatientProviderMetricsCollector,
+    SloService,
   ],
-  exports: [CustomMetricsService, HttpMetricsInterceptor],
+  exports: [CustomMetricsService, HttpMetricsInterceptor, SloService],
 })
 export class MetricsModule {}

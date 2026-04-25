@@ -58,7 +58,7 @@ Thumbs.db
 *.db-journal
 
 # Secrets and Keys
-/secrets
+secrets/
 *.pem
 *.key
 *.cert

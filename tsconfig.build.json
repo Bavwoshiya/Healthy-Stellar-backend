@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/main.ts"],
+  "include": ["src/main.ts", "src/worker.ts"],
   "exclude": [
     "node_modules",
     "test",

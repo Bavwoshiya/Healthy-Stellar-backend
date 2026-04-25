@@ -100,4 +100,10 @@ export class BackupController {
   async getStatistics(@Query('days') days?: number) {
     return this.monitoringService.getBackupStatistics(days ? parseInt(days as any, 10) : 30);
   }
+
+  @Post('recovery/drill/trigger')
+  @Roles('admin', 'system_admin')
+  async triggerRestoreDrill() {
+    return this.recoveryService.scheduledRestoreDrill();
+  }
 }

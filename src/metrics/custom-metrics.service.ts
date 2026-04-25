@@ -104,6 +104,12 @@ export const ActiveProvidersTotalGauge = makeGaugeProvider({
   help: 'Total number of active providers',
 });
 
+/** subscriptions_active — gauge tracking live GraphQL subscription iterators */
+export const SubscriptionsActiveGauge = makeGaugeProvider({
+  name: 'subscriptions_active',
+  help: 'Current number of live GraphQL subscription iterators',
+});
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -140,6 +146,8 @@ export class CustomMetricsService {
     public activePatientsGauge: Gauge<string>,
     @InjectMetric('active_providers_total')
     public activeProvidersGauge: Gauge<string>,
+    @InjectMetric('subscriptions_active')
+    public subscriptionsActiveGauge: Gauge<string>,
   ) {}
 
   // ── Existing helpers ────────────────────────────────────────────────────────

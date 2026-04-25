@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EmailQueueProducer } from './email-queue.producer';
 import { EmailQueueConsumer } from './email-queue.consumer';
+import { EmailLookupService } from './email-lookup.service';
 import { MailModule } from '../mail/mail.module';
 
 export const EMAIL_QUEUE = 'email-notifications';
@@ -35,7 +36,7 @@ export const EMAIL_QUEUE = 'email-notifications';
     }),
     MailModule,
   ],
-  providers: [EmailQueueProducer, EmailQueueConsumer],
+  providers: [EmailQueueProducer, EmailQueueConsumer, EmailLookupService],
   exports: [EmailQueueProducer],
 })
 export class EmailQueueModule {}

@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Not } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 import { Appointment, AppointmentStatus, MedicalPriority } from '../entities/appointment.entity';
 import { DoctorAvailability } from '../entities/doctor-availability.entity';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
+
+/** How many minutes before the appointment start a join token becomes valid. */
+const TOKEN_VALID_BEFORE_MINUTES = 15;
 
 @Injectable()
 export class AppointmentService {
@@ -12,6 +17,7 @@ export class AppointmentService {
     private appointmentRepository: Repository<Appointment>,
     @InjectRepository(DoctorAvailability)
     private availabilityRepository: Repository<DoctorAvailability>,
+    private readonly jwtService: JwtService,
   ) {}
 
   async create(createAppointmentDto: CreateAppointmentDto): Promise<Appointment> {
@@ -39,12 +45,13 @@ export class AppointmentService {
       }
     }
 
+    const roomId = createAppointmentDto.isTelemedicine ? randomUUID() : null;
+
     const appointment = this.appointmentRepository.create({
       ...createAppointmentDto,
       appointmentDate,
-      telemedicineLink: createAppointmentDto.isTelemedicine
-        ? `https://telemedicine.app/room/${Date.now()}`
-        : null,
+      telemedicineRoomId: roomId,
+      telemedicineLink: roomId ? `https://telemedicine.app/room/${roomId}` : null,
     });
 
     return this.appointmentRepository.save(appointment);
@@ -211,5 +218,66 @@ export class AppointmentService {
     }
 
     return slots;
+  }
+
+  /**
+   * Issues a signed, time-limited JWT that authorises `participantId` to join
+   * the telemedicine room for appointment `id`.
+   *
+   * The token is valid only within the window
+   *   [appointmentDate - TOKEN_VALID_BEFORE_MINUTES, appointmentDate + duration]
+   * so it cannot be used to join early or after the session ends.
+   */
+  async issueTelemedicineToken(
+    id: string,
+    participantId: string,
+  ): Promise<{ token: string; roomUrl: string }> {
+    // Load the sensitive columns that are excluded from normal selects
+    const appointment = await this.appointmentRepository
+      .createQueryBuilder('a')
+      .addSelect('a.telemedicine_room_id', 'a_telemedicineRoomId')
+      .addSelect('a.telemedicine_link', 'a_telemedicineLink')
+      .where('a.id = :id', { id })
+      .getOne();
+
+    if (!appointment) throw new NotFoundException(`Appointment ${id} not found`);
+    if (!appointment.isTelemedicine || !appointment.telemedicineRoomId) {
+      throw new BadRequestException('Appointment is not a telemedicine session');
+    }
+
+    // Only the patient or the doctor may obtain a token
+    if (participantId !== appointment.patientId && participantId !== appointment.doctorId) {
+      throw new ForbiddenException('Not a participant of this appointment');
+    }
+
+    const now = Date.now();
+    const windowStart = appointment.appointmentDate.getTime() - TOKEN_VALID_BEFORE_MINUTES * 60_000;
+    const windowEnd = appointment.appointmentDate.getTime() + appointment.duration * 60_000;
+
+    if (now < windowStart) {
+      throw new BadRequestException(
+        `Token not yet available – join window opens ${TOKEN_VALID_BEFORE_MINUTES} minutes before the appointment`,
+      );
+    }
+    if (now > windowEnd) {
+      throw new BadRequestException('Appointment session has already ended');
+    }
+
+    const expiresInSeconds = Math.floor((windowEnd - now) / 1000);
+
+    const token = this.jwtService.sign(
+      {
+        sub: participantId,
+        appointmentId: id,
+        roomId: appointment.telemedicineRoomId,
+        role: participantId === appointment.doctorId ? 'doctor' : 'patient',
+      },
+      { expiresIn: expiresInSeconds },
+    );
+
+    return {
+      token,
+      roomUrl: `${appointment.telemedicineLink}?token=${token}`,
+    };
   }
 }

@@ -67,6 +67,14 @@ export class MedicalAttachment {
   @Column({ type: 'uuid' })
   uploadedBy: string;
 
+  /** SHA-256 hex digest of the file content — used for integrity verification */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  checksum: string;
+
+  /** IP address of the uploader for anti-abuse auditing */
+  @Column({ type: 'varchar', length: 45, nullable: true })
+  uploadedByIp: string;
+
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 

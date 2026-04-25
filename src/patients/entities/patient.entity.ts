@@ -4,8 +4,13 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  VersionColumn,
   Index,
 } from 'typeorm';
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  NotificationPreferences,
+} from '../types/notification-preferences.type';
 
 @Entity('patients')
 export class Patient {
@@ -80,6 +85,9 @@ export class Patient {
   @Column('json', { nullable: true })
   address?: string;
 
+  @Column({ default: false })
+  isPhoneVerified: boolean;
+
   /**
    * -----------------------------
    * Identification & Media
@@ -144,6 +152,14 @@ export class Patient {
   @Column('simple-array', { nullable: true, default: null })
   allowedCountries: string[] | null;
 
+  @Column({
+    type: 'jsonb',
+    nullable: false,
+    default: () =>
+      `'${JSON.stringify(DEFAULT_NOTIFICATION_PREFERENCES)}'`,
+  })
+  notificationPreferences: NotificationPreferences;
+
   /**
    * -----------------------------
    * System Metadata
@@ -154,6 +170,10 @@ export class Patient {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  /** Optimistic concurrency — incremented by TypeORM on every save */
+  @VersionColumn({ default: 0 })
+  version: number;
 }
 
 export default Patient;

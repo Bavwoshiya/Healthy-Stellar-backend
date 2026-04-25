@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PaginatedResponseDto, PaginationMetaDto } from '../../common/dto/paginated-response.dto';
 import { Record } from '../entities/record.entity';
 
 export class PaginationMeta {
@@ -37,7 +38,7 @@ export class PaginatedRecordsResponseDto {
 
   @ApiProperty({
     description: 'Pagination metadata',
-    type: PaginationMeta,
+    type: PaginationMetaDto,
   })
-  meta: PaginationMeta;
+  meta: PaginationMetaDto;
 }

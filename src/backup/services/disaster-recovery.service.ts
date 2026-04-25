@@ -5,7 +5,8 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
-import { BackupLog, BackupStatus } from '../entities/backup-log.entity';
+import { Cron } from '@nestjs/schedule';
+import { BackupLog, BackupStatus, BackupType } from '../entities/backup-log.entity';
 import { RecoveryTest, RecoveryTestStatus } from '../entities/recovery-test.entity';
 
 const execAsync = promisify(exec);
@@ -314,5 +315,34 @@ export class DisasterRecoveryService {
 
   async scheduleRecoveryTest(backupId: string, testedBy: string): Promise<RecoveryTest> {
     return this.performRecovery({ backupId, validateOnly: true }, testedBy);
+  }
+
+  @Cron('0 5 * * 0') // Weekly on Sunday at 5 AM
+  async scheduledRestoreDrill() {
+    this.logger.log('Starting scheduled automated restore drill');
+
+    const latestVerifiedBackup = await this.backupLogRepository.findOne({
+      where: { status: BackupStatus.VERIFIED, backupType: BackupType.FULL },
+      order: { completedAt: 'DESC' },
+    });
+
+    if (!latestVerifiedBackup) {
+      this.logger.warn('No verified full backup found for automated restore drill');
+      return;
+    }
+
+    try {
+      await this.performRecovery(
+        { backupId: latestVerifiedBackup.id, validateOnly: true },
+        'automated-drill',
+      );
+      this.logger.log(
+        `Automated restore drill for backup ${latestVerifiedBackup.id} completed successfully`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Automated restore drill for backup ${latestVerifiedBackup.id} failed: ${error.message}`,
+      );
+    }
   }
 }

@@ -20,11 +20,12 @@ export class WebhookSignatureMiddleware implements NestMiddleware {
   /** nonce → expiry timestamp; cleaned up lazily */
   private readonly nonceCache = new Map<string, number>();
 
-  constructor() {
-    this.secret = process.env.WEBHOOK_SECRET;
-    if (!this.secret) {
-      throw new Error('WEBHOOK_SECRET environment variable is required');
+  constructor(secretEnvVar: string) {
+    const secret = process.env[secretEnvVar];
+    if (!secret) {
+      throw new Error(`${secretEnvVar} environment variable is required`);
     }
+    this.secret = secret;
   }
 
   use(req: Request, res: Response, next: NextFunction) {
@@ -53,7 +54,7 @@ export class WebhookSignatureMiddleware implements NestMiddleware {
     const payload = `${timestampStr}.${nonce}.${rawBody}`;
     const expectedHex = crypto
       .createHmac('sha256', this.secret)
-      .update(payload)
+      .update(`${timestamp}.${rawBody}`)
       .digest('hex');
 
     // Constant-time comparison — normalise to same length first to avoid

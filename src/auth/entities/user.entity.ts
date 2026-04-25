@@ -17,6 +17,7 @@ export enum UserRole {
   PATIENT = 'patient',
   BILLING_STAFF = 'billing_staff',
   MEDICAL_RECORDS = 'medical_records',
+  SUPER_ADMIN = 'super_admin',
 }
 
 @Entity('users')
@@ -91,6 +92,10 @@ export class User {
 
   @Column({ nullable: true, length: 255 })
   institution: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  organizationId: string;
 
   @Column({ nullable: true, length: 255, select: false })
   stellarPublicKey: string;

@@ -12,14 +12,14 @@ npm install @nestjs/terminus @nestjs/axios axios redis
 
 Add to your `.env` file:
 
-```env
+````env
 REDIS_URL=redis://localhost:6379
 IPFS_URL=http://localhost:5001
 Run the following command to install required dependencies:
 
 ```bash
 npm install @nestjs/terminus @nestjs/axios axios ioredis
-```
+````
 
 ## Configuration
 
@@ -37,6 +37,7 @@ STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
 
 - `GET /health` - Liveness probe (always returns ok)
 - `GET /health/ready` - Readiness probe (checks all dependencies)
+- `GET /health/synthetic` - Synthetic probes for critical user journeys (business-level availability)
 
 ## Response Format
 
@@ -46,6 +47,7 @@ STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
 ## Response Format
 
 Success (200):
+
 ```json
 {
   "status": "ok",
@@ -90,20 +92,21 @@ Success (200):
 ```
 
 Returns HTTP 503 if any dependency is down.
-    "database": { "status": "up", "responseTime": "15ms" },
-    "redis": { "status": "up", "responseTime": "8ms" },
-    "ipfs": { "status": "up", "responseTime": "45ms" },
-    "stellar": { "status": "up", "responseTime": "120ms" }
-  },
-  "error": {},
-  "details": {
-    "database": { "status": "up", "responseTime": "15ms" },
-    "redis": { "status": "up", "responseTime": "8ms" },
-    "ipfs": { "status": "up", "responseTime": "45ms" },
-    "stellar": { "status": "up", "responseTime": "120ms" }
-  }
+"database": { "status": "up", "responseTime": "15ms" },
+"redis": { "status": "up", "responseTime": "8ms" },
+"ipfs": { "status": "up", "responseTime": "45ms" },
+"stellar": { "status": "up", "responseTime": "120ms" }
+},
+"error": {},
+"details": {
+"database": { "status": "up", "responseTime": "15ms" },
+"redis": { "status": "up", "responseTime": "8ms" },
+"ipfs": { "status": "up", "responseTime": "45ms" },
+"stellar": { "status": "up", "responseTime": "120ms" }
 }
-```
+}
+
+````
 
 Failure (503):
 ```json
@@ -120,7 +123,7 @@ Failure (503):
     "redis": { "status": "down", "responseTime": "5002ms", "error": "Connection timeout" }
   }
 }
-```
+````
 
 ## Features
 

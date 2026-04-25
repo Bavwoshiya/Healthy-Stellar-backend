@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { AnalyticsService } from './analytics.service';
 import { User } from '../users/entities/user.entity';
@@ -43,6 +43,7 @@ describe('AnalyticsService — getStats', () => {
         { provide: getRepositoryToken(AccessGrant), useValue: grantRepo },
         { provide: getRepositoryToken(StellarTransaction), useValue: { count: jest.fn().mockResolvedValue(0), createQueryBuilder: jest.fn() } },
         { provide: CACHE_MANAGER, useValue: cache },
+        { provide: getDataSourceToken(), useValue: { transaction: jest.fn() } },
       ],
     }).compile();
 

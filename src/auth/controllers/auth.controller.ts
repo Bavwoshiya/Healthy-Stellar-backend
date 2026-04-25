@@ -1,26 +1,28 @@
 import {
   Controller,
   Post,
+  Delete,
   Body,
   UseGuards,
   Get,
   Req,
+  Param,
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService, AuthResponse } from '../services/auth.service';
 import { MfaService } from '../services/mfa.service';
 import { SessionManagementService } from '../services/session-management.service';
 import { AuthTokenService } from '../services/auth-token.service';
+import { RefreshTokenStoreService } from '../services/refresh-token-store.service';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { JwtPayload } from '../services/auth-token.service';
 import { RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 import { RefreshTokenDto } from '../dto/session.dto';
 import { User, UserRole } from '../entities/user.entity';
-import { AuthRateLimit, VerifyRateLimit } from '../../common/throttler/throttler.decorator';
+import { AuthRateLimit } from '../../common/throttler/throttler.decorator';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -30,6 +32,7 @@ export class AuthController {
     private mfaService: MfaService,
     private sessionManagementService: SessionManagementService,
     private authTokenService: AuthTokenService,
+    private refreshTokenStore: RefreshTokenStoreService,
   ) {}
 
   /**
@@ -94,42 +97,39 @@ export class AuthController {
   }
 
   /**
-   * Refresh access token
+   * Refresh access token — full rotation with reuse detection
    */
   @Post('refresh')
-  @AuthRateLimit() // 10 requests per minute
-  @ApiOperation({ summary: 'Refresh access token' })
-  @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
+  @AuthRateLimit()
+  @ApiOperation({ summary: 'Refresh access token (rotates refresh token)' })
+  @ApiResponse({ status: 200, description: 'New token pair issued' })
+  @ApiResponse({ status: 401, description: 'Invalid, expired, or replayed refresh token' })
   async refreshToken(
-    @Body() refreshTokenDto: RefreshTokenDto,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
-    const payload = this.authTokenService.verifyRefreshToken(refreshTokenDto.refreshToken);
-
-    if (!payload) {
-      throw new BadRequestException(I18nContext.current()?.t('errors.INVALID_REFRESH_TOKEN') || 'Invalid refresh token');
+    @Body() { refreshToken }: RefreshTokenDto,
+  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+    // 1. Verify JWT signature and expiry
+    const payload = this.authTokenService.verifyRefreshToken(refreshToken);
+    if (!payload || payload.type !== 'refresh') {
+      throw new BadRequestException('Invalid refresh token');
     }
 
-    // Get session and user
-    const session = await this.sessionManagementService.getSession(payload.sessionId);
-    if (!session) {
-      throw new NotFoundException(I18nContext.current()?.t('errors.SESSION_NOT_FOUND') || 'Session not found');
-    }
+    // 2. Validate against Redis store — detects reuse attacks, marks old token consumed
+    await this.refreshTokenStore.consumeAndValidate(payload.sessionId, refreshToken);
 
+    // 3. Load user
     const user = await this.authService.getUserById(payload.userId);
-    if (!user) {
-      throw new NotFoundException(I18nContext.current()?.t('errors.USER_NOT_FOUND') || 'User not found');
+    if (!user || !user.isActive) {
+      throw new BadRequestException('User not found or inactive');
     }
 
-    // Generate new tokens
+    // 4. Issue new token pair
+    const tokens = this.authTokenService.generateTokenPair(user, payload.sessionId, user.mfaEnabled);
+
+    // 5. Persist new refresh token in Redis and update DB session
+    await this.refreshTokenStore.store(payload.sessionId, tokens.refreshToken);
+
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const refreshTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-    const tokens = this.authTokenService.generateTokenPair(
-      user,
-      payload.sessionId,
-      user.mfaEnabled,
-    );
-
     await this.sessionManagementService.refreshSession(
       payload.sessionId,
       tokens.accessToken,
@@ -140,8 +140,31 @@ export class AuthController {
 
     return {
       accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
     };
+  }
+
+  /**
+   * Revoke all sessions for the authenticated user and clear Redis tokens
+   */
+  @Delete('sessions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Revoke all sessions (logout everywhere)' })
+  @ApiResponse({ status: 200, description: 'All sessions revoked' })
+  async revokeAllSessionsDelete(@Req() req: Request): Promise<{ message: string }> {
+    const user = req.user as JwtPayload;
+    const sessions = await this.sessionManagementService.getUserSessions(user.userId);
+    await Promise.all(
+      sessions.map((s) =>
+        Promise.all([
+          this.sessionManagementService.revokeSession(s.id),
+          this.refreshTokenStore.revokeSession(s.id),
+        ]),
+      ),
+    );
+    return { message: 'All sessions revoked' };
   }
 
   /**
@@ -199,26 +222,55 @@ export class AuthController {
     return sessions.map((session) => ({
       id: session.id,
       ipAddress: session.ipAddress,
+      userAgent: session.userAgent,
       deviceId: session.deviceId,
+      lastActive: session.updatedAt,
       createdAt: session.createdAt,
       expiresAt: session.expiresAt,
     }));
   }
 
   /**
-   * Revoke session
+   * Terminate a specific session
+   */
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Terminate a specific session' })
+  @ApiResponse({ status: 200, description: 'Session terminated' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async deleteSession(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    const user = req.user as JwtPayload;
+    const session = await this.sessionManagementService.getUserSessions(user.userId).then(
+      (sessions) => sessions.find((s) => s.id === id),
+    );
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.sessionManagementService.revokeSession(id);
+    return { message: 'Session terminated' };
+  }
+
+  /**
+   * Revoke session (legacy endpoint)
    */
   @Post('sessions/:sessionId/revoke')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Revoke a specific session' })
-  async revokeSession(@Req() req: Request, sessionId: string): Promise<{ message: string }> {
+  async revokeSession(
+    @Param('sessionId') sessionId: string,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
     const user = req.user as JwtPayload;
-    // Verify session belongs to user
-    const session = await this.sessionManagementService.getSession(sessionId);
-    if (!session || session.userId !== user.userId) {
-      throw new NotFoundException(I18nContext.current()?.t('errors.SESSION_NOT_FOUND') || 'Session not found');
+    const session = await this.sessionManagementService.getUserSessions(user.userId).then(
+      (sessions) => sessions.find((s) => s.id === sessionId),
+    );
+    if (!session) {
+      throw new NotFoundException('Session not found');
     }
-
     await this.sessionManagementService.revokeSession(sessionId);
     return { message: 'Session revoked' };
   }

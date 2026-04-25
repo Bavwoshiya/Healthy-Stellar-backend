@@ -1,23 +1,52 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { AwsKmsService } from './services/aws-kms.service';
-import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
-import { CommonModule } from '../common/common.module';
-import { TenantModule } from '../tenant/tenant.module';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { PatientDekEntity } from './entities/patient-dek.entity';
+import { KeyRotationLog } from './entities/key-rotation-log.entity';
+import { EnvelopeKeyManagementService } from './services/envelope-key-management.service';
+
+import { AwsKmsStrategy } from './strategies/aws-kms.strategy';
+import { KEY_MANAGEMENT_STRATEGY } from './interfaces/key-management.interface';
+
+import { KeyManagementAdminController } from './controllers/key-management-admin.controller';
+
+
+export const KEY_MANAGEMENT_SERVICE = 'KeyManagementService';
 
 @Module({
   imports: [
     ConfigModule,
-    CircuitBreakerModule,
-    CommonModule,
-    TenantModule,
+    TypeOrmModule.forFeature([PatientDekEntity, KeyRotationLog]),
   ],
+  controllers: [KeyManagementAdminController],
+
   providers: [
+    EnvelopeKeyManagementService,
+    AwsKmsStrategy,
     {
-      provide: 'KeyManagementService',
-      useClass: AwsKmsService,
+      provide: KEY_MANAGEMENT_STRATEGY,
+      inject: [ConfigService, EnvelopeKeyManagementService, AwsKmsStrategy],
+      useFactory: (
+        config: ConfigService,
+        local: EnvelopeKeyManagementService,
+        aws: AwsKmsStrategy,
+      ) => {
+        const provider = config.get<string>('KEY_MANAGEMENT_PROVIDER', 'local');
+        switch (provider) {
+          case 'aws':
+            return aws;
+          case 'gcp':
+            throw new Error('GCP KMS strategy is not yet implemented');
+          default:
+            return local;
+        }
+      },
+    },
+    {
+      provide: KEY_MANAGEMENT_SERVICE,
+      useExisting: KEY_MANAGEMENT_STRATEGY,
     },
   ],
-  exports: ['KeyManagementService'],
+  exports: [KEY_MANAGEMENT_SERVICE, KEY_MANAGEMENT_STRATEGY],
 })
 export class KeyManagementModule {}

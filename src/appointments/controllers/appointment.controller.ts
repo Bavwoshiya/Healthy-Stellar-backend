@@ -53,4 +53,15 @@ export class AppointmentController {
   updateStatus(@Param('id') id: string, @Body('status') status: AppointmentStatus) {
     return this.appointmentService.updateStatus(id, status);
   }
+
+  @Get(':id/telemedicine-token')
+  @ApiOperation({ summary: 'Issue a signed, time-limited join token for a telemedicine room' })
+  @ApiResponse({ status: 200, description: 'JWT join token and room URL' })
+  @ApiQuery({ name: 'participantId', required: true, type: String })
+  getTelemedicineToken(
+    @Param('id') id: string,
+    @Query('participantId') participantId: string,
+  ) {
+    return this.appointmentService.issueTelemedicineToken(id, participantId);
+  }
 }
