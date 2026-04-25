@@ -25,7 +25,6 @@ export class BackupVerificationService {
     const unverifiedBackups = await this.backupLogRepository.find({
       where: { status: BackupStatus.COMPLETED },
       order: { completedAt: 'DESC' },
-      take: 10,
     });
 
     for (const backup of unverifiedBackups) {
