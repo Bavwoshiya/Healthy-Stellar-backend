@@ -12,6 +12,7 @@ import { StellarTransactionProcessor } from './processors/stellar-transaction.pr
 import { ContractWritesProcessor } from './processors/contract-writes.processor';
 import { EventIndexingProcessor } from './processors/event-indexing.processor';
 import { BlockchainModule } from '../blockchain/blockchain.module';
+import { QueueEventsListener } from './queue-events.listener';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { BlockchainModule } from '../blockchain/blockchain.module';
     StellarTransactionProcessor,
     ContractWritesProcessor,
     EventIndexingProcessor,
+    QueueEventsListener,
   ],
   exports: [QueueService, BullModule],
 })

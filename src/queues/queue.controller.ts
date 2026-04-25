@@ -7,7 +7,11 @@ import {
   NotFoundException,
   UseGuards,
   Logger,
+  Sse,
+  MessageEvent,
 } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   ApiTags,
   ApiOperation,
@@ -69,6 +73,26 @@ export class QueueController {
       }
       throw error;
     }
+  }
+
+  /**
+   * Subscribe to job status updates (Server-Sent Events)
+   */
+  @Sse(':jobId/stream')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Stream job status updates (SSE)',
+    description:
+      'Opens a Server-Sent Events stream for real-time updates on a job\'s lifecycle.',
+  })
+  streamJobStatus(@Param('jobId') jobId: string): Observable<MessageEvent> {
+    this.logger.debug(`Streaming job status for: ${jobId}`);
+    return this.queueService.subscribeToJob(jobId).pipe(
+      map((status) => ({
+        data: this.formatStatusResponse(status),
+      } as MessageEvent)),
+    );
   }
 
   /**

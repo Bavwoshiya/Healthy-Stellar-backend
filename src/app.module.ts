@@ -61,6 +61,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { EventStoreModule } from './event-store/event-store.module';
 import { BullBoardAuthMiddleware } from './queues/middleware/bull-board-auth.middleware';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
@@ -131,6 +132,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     CqrsModule,
     ProviderPatientModule,
     WebhooksModule,
+    EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [
