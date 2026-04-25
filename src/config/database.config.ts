@@ -71,7 +71,8 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
         min: this.configService.get<number>('DB_POOL_MIN', 2),
         connectionTimeoutMillis: this.configService.get<number>('DB_CONNECTION_TIMEOUT_MS', 2000),
         idleTimeoutMillis: this.configService.get<number>('DB_IDLE_TIMEOUT_MS', 30000),
-        statement_timeout: 60000,
+        statement_timeout: this.configService.get<number>('DB_STATEMENT_TIMEOUT_MS', 10000),
+        query_timeout: this.configService.get<number>('DB_QUERY_TIMEOUT_MS', 30000),
         application_name: 'healthy-stellar-backend',
       },
 

@@ -37,6 +37,7 @@ import { MedicalEmergencyErrorFilter } from './common/errors/medical-emergency-e
 import { MedicalDataValidationPipe } from './common/validation/medical-data.validator.pipe';
 import { TenantConfigModule } from './tenant-config/tenant-config.module';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
+import { QueryPerformanceInterceptor } from './common/interceptors/query-performance.interceptor';
 import { GdprModule } from './gdpr/gdpr.module';
 import { ProviderPatientModule } from './provider-patient/provider-patient.module';
 import { TenantInterceptor } from './tenant/interceptors/tenant.interceptor';
@@ -140,6 +141,10 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: TracingInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: QueryPerformanceInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
