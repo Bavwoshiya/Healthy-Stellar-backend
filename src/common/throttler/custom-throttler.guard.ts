@@ -1,13 +1,46 @@
 import { Injectable, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
-import { THROTTLER_LIMIT, THROTTLER_TTL } from './throttler.decorator';
+import { THROTTLER_LIMIT, THROTTLER_TTL, THROTTLE_PROFILE } from './throttler.decorator';
+import { resolveProfile, ActorType } from './throttler.config';
 import { Request, Response } from 'express';
 
-/**
- * Enhanced throttler guard with custom rate limits per endpoint
- * and proper header management
- */
+/** Map route prefixes to logical route groups used in RATE_LIMIT_PROFILES */
+const ROUTE_GROUP_MAP: Array<[RegExp, string]> = [
+  [/^\/auth/,        'auth'],
+  [/^\/admin/,       'admin'],
+  [/^\/reports/,     'reports'],
+  [/^\/attachments/, 'upload'],
+  [/^\/telemetry/,   'telemetry'],
+  // PHI routes
+  [/^\/medical-records/, 'phi'],
+  [/^\/records/,         'phi'],
+  [/^\/patients/,        'phi'],
+  [/^\/pharmacy/,        'phi'],
+  [/^\/laboratory/,      'phi'],
+  [/^\/diagnosis/,       'phi'],
+  [/^\/treatment/,       'phi'],
+  [/^\/consents/,        'phi'],
+];
+
+function routeGroup(url: string): string {
+  for (const [pattern, group] of ROUTE_GROUP_MAP) {
+    if (pattern.test(url)) return group;
+  }
+  return '*';
+}
+
+function actorType(req: Request): ActorType {
+  const user = (req as any).user;
+  if (!user) return (req as any).apiKey ? 'api_key' : 'anonymous';
+  const role: string = (user.role ?? user.roles?.[0] ?? '').toLowerCase();
+  if (role.includes('admin'))    return 'admin';
+  if (role.includes('provider') || role.includes('doctor') || role.includes('nurse')) return 'provider';
+  if (role.includes('device'))   return 'device';
+  if (role.includes('patient'))  return 'patient';
+  return 'provider'; // authenticated but unknown role → conservative default
+}
+
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
   constructor(
@@ -18,109 +51,59 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     super(options, storageService, reflector);
   }
 
-  /**
-   * Get tracker key for rate limiting
-   */
   protected async getTracker(req: Request): Promise<string> {
     const user = (req as any).user;
-
-    if (user) {
-      // Use Stellar public key if available, otherwise user ID
-      return user.stellarPublicKey || user.userId || user.id || this.getIpFromRequest(req);
-    }
-
-    return this.getIpFromRequest(req);
+    if (user) return user.stellarPublicKey || user.userId || user.id || this.ipFrom(req);
+    const apiKey = (req as any).apiKey;
+    if (apiKey?.id) return `api_key:${apiKey.id}`;
+    return this.ipFrom(req);
   }
 
-  /**
-   * Extract IP address handling proxies
-   */
-  private getIpFromRequest(req: Request): string {
-    const forwardedFor = req.headers['x-forwarded-for'];
-    if (forwardedFor) {
-      const ips = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-      return ips.split(',')[0].trim();
-    }
-
-    const realIp = req.headers['x-real-ip'];
-    if (realIp) {
-      return Array.isArray(realIp) ? realIp[0] : realIp;
-    }
-
+  private ipFrom(req: Request): string {
+    const fwd = req.headers['x-forwarded-for'];
+    if (fwd) return (Array.isArray(fwd) ? fwd[0] : fwd).split(',')[0].trim();
+    const real = req.headers['x-real-ip'];
+    if (real) return Array.isArray(real) ? real[0] : real;
     return req.ip || req.socket?.remoteAddress || 'unknown';
   }
 
-  /**
-   * Handle rate limit logic with custom limits
-   */
   async handleRequest(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request  = context.switchToHttp().getRequest<Request>();
     const response = context.switchToHttp().getResponse<Response>();
-    const handler = context.getHandler();
+    const handler  = context.getHandler();
     const classRef = context.getClass();
 
-    // Get custom rate limits from decorators
-    const customLimit = this.reflector.getAllAndOverride<number>(THROTTLER_LIMIT, [
-      handler,
-      classRef,
-    ]);
-    const customTtl = this.reflector.getAllAndOverride<number>(THROTTLER_TTL, [handler, classRef]);
+    // 1. Explicit decorator overrides take highest priority
+    const explicitLimit = this.reflector.getAllAndOverride<number>(THROTTLER_LIMIT, [handler, classRef]);
+    const explicitTtl   = this.reflector.getAllAndOverride<number>(THROTTLER_TTL,   [handler, classRef]);
+    const profileKey    = this.reflector.getAllAndOverride<string>(THROTTLE_PROFILE, [handler, classRef]);
 
-    // Determine rate limit configuration
-    const user = (request as any).user;
-    let limit: number;
-    let ttl: number;
+    // 2. Resolve profile from route × actor matrix
+    const actor  = actorType(request);
+    const group  = profileKey ?? routeGroup(request.path ?? request.url);
+    const profile = resolveProfile(group, actor);
 
-    if (customLimit !== undefined && customTtl !== undefined) {
-      // Use custom limits from decorator
-      limit = customLimit;
-      ttl = customTtl;
-    } else if (user) {
-      // Authenticated user default limits
-      limit = 200;
-      ttl = 60000; // 60 seconds
-    } else {
-      // Unauthenticated default limits
-      limit = 100;
-      ttl = 60000; // 60 seconds
-    }
+    const limit = explicitLimit ?? profile.limit;
+    const ttl   = explicitTtl   ?? profile.ttl;
 
-    // Get tracker
     const tracker = await this.getTracker(request);
-    const key = this.generateKey(context, tracker, ttl);
+    const key = `throttle:${group}:${actor}:${tracker}`;
 
-    // Check and increment rate limit
     const { totalHits, timeToExpire } = await this.storageService.increment(key, ttl);
+    const remaining  = Math.max(0, limit - totalHits);
+    const resetTime  = Math.ceil(Date.now() / 1000) + Math.ceil(timeToExpire / 1000);
 
-    // Calculate remaining requests
-    const remaining = Math.max(0, limit - totalHits);
-    const resetTime = Math.ceil(Date.now() / 1000) + Math.ceil(timeToExpire / 1000);
-
-    // Set rate limit headers
-    response.setHeader('X-RateLimit-Limit', limit);
+    response.setHeader('X-RateLimit-Limit',     limit);
     response.setHeader('X-RateLimit-Remaining', remaining);
-    response.setHeader('X-RateLimit-Reset', resetTime);
+    response.setHeader('X-RateLimit-Reset',     resetTime);
+    response.setHeader('X-RateLimit-Profile',   `${group}:${actor}`);
 
-    // Check if limit exceeded
     if (totalHits > limit) {
       const retryAfter = Math.ceil(timeToExpire / 1000);
       response.setHeader('Retry-After', retryAfter);
-
-      throw new ThrottlerException(`Rate limit exceeded. Try again in ${retryAfter} seconds.`);
+      throw new ThrottlerException(`Rate limit exceeded. Retry after ${retryAfter}s.`);
     }
 
     return true;
-  }
-
-  /**
-   * Generate storage key
-   */
-  private generateKey(context: ExecutionContext, tracker: string, ttl: number): string {
-    const request = context.switchToHttp().getRequest();
-    const handler = context.getHandler();
-    const className = context.getClass().name;
-    const methodName = handler.name;
-
-    return `throttle:${className}:${methodName}:${tracker}:${ttl}`;
   }
 }
