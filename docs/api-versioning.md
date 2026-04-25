@@ -68,6 +68,12 @@ Deprecated endpoints return the following response headers:
 | `Sunset`      | RFC 7231 date when the endpoint is removed |
 | `Link`        | Alternative route (`rel="alternate"`)      |
 
+After the sunset date, deprecated endpoints return:
+
+| Status Code | Meaning |
+|-------------|---------|
+| `410 Gone`  | Endpoint has reached end-of-life and is no longer served |
+
 Example:
 
 ```http
@@ -168,5 +174,6 @@ Add the new version to `src/versioning/api-versions.controller.ts`:
 ## Architecture Notes
 
 - `VERSION_NEUTRAL` is used for infrastructure endpoints: `GET /api`, `GET /health`, `GET /metrics`
-- The global `DeprecationInterceptor` automatically injects deprecation headers — no manual `res.setHeader()` needed
+- The global `DeprecationInterceptor` automatically injects deprecation headers and enforces `410 Gone` when route-level sunset dates are reached
+- The global `ApiVersionLifecycleInterceptor` enforces version lifecycle policy (current/deprecated/sunset) for URI-prefixed versions
 - `defaultVersion: ['1', VERSION_NEUTRAL]` ensures backward compatibility: clients not sending a version prefix still hit v1

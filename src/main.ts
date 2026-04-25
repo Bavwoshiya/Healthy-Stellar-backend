@@ -10,6 +10,7 @@ import { nonceMiddleware } from './common/middleware/nonce.middleware';
 import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
 import { Logger } from 'nestjs-pino';
 import { applySecurityHeaders } from './security/http-security.config';
+import { ApiVersionLifecycleInterceptor } from './versioning/api-version-lifecycle.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -92,7 +93,10 @@ async function bootstrap() {
     maxAge: 3600,
   });
 
-  app.useGlobalInterceptors(new DeprecationInterceptor(app.get(Reflector)));
+  app.useGlobalInterceptors(
+    new ApiVersionLifecycleInterceptor(),
+    new DeprecationInterceptor(app.get(Reflector)),
+  );
 
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(

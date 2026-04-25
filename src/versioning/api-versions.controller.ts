@@ -1,5 +1,6 @@
-import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { API_VERSION_LIFECYCLE_POLICIES } from './api-version-lifecycle.policy';
 
 export interface ApiVersionInfo {
   version: string;
@@ -16,7 +17,6 @@ export interface ApiVersionInfo {
  * regardless of the URI version prefix.
  */
 @ApiTags('API Versioning')
-@Version(VERSION_NEUTRAL)
 @Controller('api')
 export class ApiVersionsController {
   @Get()
@@ -27,23 +27,7 @@ export class ApiVersionsController {
   })
   getVersions(): { versions: ApiVersionInfo[] } {
     return {
-      versions: [
-        {
-          version: '1',
-          status: 'current',
-          releaseDate: '2024-01-01',
-          baseUrl: '/v1',
-          changelog: 'https://github.com/joel-metal/Healthy-Stellar-backend/blob/main/docs/api-versioning.md#v1',
-        },
-        // v2 placeholder — uncomment when v2 controllers are ready
-        // {
-        //   version: '2',
-        //   status: 'current',
-        //   releaseDate: '2025-01-01',
-        //   baseUrl: '/v2',
-        //   changelog: '...',
-        // },
-      ],
+      versions: API_VERSION_LIFECYCLE_POLICIES,
     };
   }
 }
